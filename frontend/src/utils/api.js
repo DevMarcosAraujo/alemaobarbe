@@ -1,0 +1,36 @@
+import axios from 'axios';
+
+const api = axios.create({
+  baseURL: import.meta.env.VITE_API_URL || '/api',
+  timeout: 15000,
+  headers: { 'Content-Type': 'application/json' },
+});
+
+// Interceptor de request - adiciona token
+api.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem('vikings_token');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
+
+// Interceptor de response - trata erros globais
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      localStorage.removeItem('vikings_token');
+      localStorage.removeItem('vikings_user');
+      if (!window.location.pathname.includes('/login') && !window.location.pathname.includes('/admin')) {
+        window.location.href = '/login';
+      }
+    }
+    return Promise.reject(error);
+  }
+);
+
+export default api;

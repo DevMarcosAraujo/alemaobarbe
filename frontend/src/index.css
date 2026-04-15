@@ -1,0 +1,209 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  html {
+    scroll-behavior: smooth;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    background-color: #0A0A0A;
+    color: #F5F0E8;
+    font-family: 'Inter', sans-serif;
+    line-height: 1.6;
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Scrollbar customizada */
+  ::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: #111111;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #C9A84C;
+    border-radius: 3px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: #E8C56A;
+  }
+
+  /* Seleção de texto */
+  ::selection {
+    background: rgba(201, 168, 76, 0.3);
+    color: #F5F0E8;
+  }
+}
+
+@layer components {
+  /* Botões */
+  .btn-gold {
+    @apply bg-gold-gradient text-viking-dark font-semibold px-6 py-3 rounded-lg
+           transition-all duration-300 hover:shadow-gold hover:scale-105
+           active:scale-95 focus:outline-none focus:ring-2 focus:ring-viking-gold;
+  }
+
+  .btn-outline-gold {
+    @apply border border-viking-gold text-viking-gold font-semibold px-6 py-3 rounded-lg
+           transition-all duration-300 hover:bg-viking-gold hover:text-viking-dark
+           hover:shadow-gold active:scale-95 focus:outline-none;
+  }
+
+  .btn-red {
+    @apply bg-viking-red text-white font-semibold px-6 py-3 rounded-lg
+           transition-all duration-300 hover:bg-viking-red-light hover:shadow-lg
+           active:scale-95 focus:outline-none;
+  }
+
+  .btn-ghost {
+    @apply text-viking-text-secondary font-medium px-4 py-2 rounded-lg
+           transition-all duration-200 hover:bg-viking-gray hover:text-viking-text-primary
+           focus:outline-none;
+  }
+
+  /* Cards */
+  .card {
+    @apply bg-viking-gray rounded-2xl border border-viking-gray-mid
+           transition-all duration-300;
+  }
+
+  .card-hover {
+    @apply card hover:border-viking-gold/40 hover:shadow-dark-lg hover:-translate-y-1;
+  }
+
+  /* Inputs */
+  .input-field {
+    @apply w-full bg-viking-gray-mid border border-viking-gray-light rounded-xl px-4 py-3
+           text-viking-text-primary placeholder-viking-text-muted
+           focus:outline-none focus:border-viking-gold focus:ring-1 focus:ring-viking-gold/30
+           transition-colors duration-200;
+  }
+
+  .input-label {
+    @apply text-viking-text-secondary text-sm font-medium mb-1.5 block;
+  }
+
+  /* Seções */
+  .section-title {
+    @apply font-viking text-3xl md:text-4xl font-bold text-viking-text-primary;
+  }
+
+  .section-subtitle {
+    @apply text-viking-text-secondary text-lg mt-3;
+  }
+
+  .gold-divider {
+    @apply w-20 h-0.5 bg-gold-gradient mx-auto my-4;
+  }
+
+  /* Navbar link */
+  .nav-link {
+    @apply text-viking-text-secondary hover:text-viking-gold font-medium
+           transition-colors duration-200 relative;
+  }
+
+  .nav-link.active {
+    @apply text-viking-gold;
+  }
+
+  /* Status badges */
+  .badge-pending {
+    @apply bg-yellow-900/40 text-yellow-400 border border-yellow-800/50;
+  }
+
+  .badge-confirmed {
+    @apply bg-blue-900/40 text-blue-400 border border-blue-800/50;
+  }
+
+  .badge-completed {
+    @apply bg-green-900/40 text-green-400 border border-green-800/50;
+  }
+
+  .badge-cancelled {
+    @apply bg-red-900/40 text-red-400 border border-red-800/50;
+  }
+
+  .badge {
+    @apply text-xs font-medium px-2.5 py-0.5 rounded-full;
+  }
+
+  /* Gold accent line */
+  .gold-accent {
+    @apply relative after:absolute after:bottom-0 after:left-0 after:w-0 after:h-0.5
+           after:bg-viking-gold after:transition-all after:duration-300 hover:after:w-full;
+  }
+
+  /* Glass effect */
+  .glass {
+    @apply bg-white/5 backdrop-blur-md border border-white/10;
+  }
+
+  /* Admin sidebar item */
+  .sidebar-item {
+    @apply flex items-center gap-3 px-4 py-3 rounded-xl text-viking-text-secondary
+           transition-all duration-200 cursor-pointer
+           hover:bg-viking-gray-mid hover:text-viking-text-primary;
+  }
+
+  .sidebar-item.active {
+    @apply bg-viking-gold/10 text-viking-gold border border-viking-gold/20;
+  }
+}
+
+@layer utilities {
+  .text-gradient-gold {
+    background: linear-gradient(135deg, #C9A84C 0%, #E8C56A 50%, #A8893A 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .bg-grid {
+    background-image:
+      linear-gradient(rgba(201, 168, 76, 0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(201, 168, 76, 0.03) 1px, transparent 1px);
+    background-size: 50px 50px;
+  }
+
+  .hero-text-shadow {
+    text-shadow: 0 2px 20px rgba(0, 0, 0, 0.8);
+  }
+}
+
+/* Animações customizadas */
+@keyframes borderGlow {
+  0%, 100% { border-color: rgba(201, 168, 76, 0.3); }
+  50% { border-color: rgba(201, 168, 76, 0.8); }
+}
+
+.border-glow {
+  animation: borderGlow 2s ease-in-out infinite;
+}
+
+/* Mobile touch feedback */
+@media (hover: none) {
+  .btn-gold:active { transform: scale(0.97); }
+  .card-hover:active { transform: translateY(0); }
+}
+
+/* Custom range input para timepicker */
+input[type="time"] {
+  color-scheme: dark;
+}
+
+input[type="date"] {
+  color-scheme: dark;
+}

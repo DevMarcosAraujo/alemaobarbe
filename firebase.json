@@ -1,0 +1,11 @@
+{
+  "functions": {
+    "source": "backend",
+    "runtime": "nodejs18",
+    "ignore": [
+      "node_modules",
+      ".git",
+      "src/index.js"
+    ]
+  }
+}
