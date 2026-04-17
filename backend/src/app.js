@@ -12,20 +12,20 @@ initializeFirebase();
 
 const app = express();
 
-// Segurança
-app.use(helmet());
+const corsOptions = {
+  origin: ['https://alemaobarbe.netlify.app', 'http://localhost:5173', 'http://localhost:3000',
+    ...(process.env.FRONTEND_URL ? [process.env.FRONTEND_URL] : [])],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+};
 
-// CORS
-app.use(
-  cors({
-    origin: process.env.FRONTEND_URL
-      ? [process.env.FRONTEND_URL, 'http://localhost:5173', 'http://localhost:3000']
-      : ['http://localhost:5173', 'http://localhost:3000'],
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
-  })
-);
+// CORS antes de tudo (inclusive preflight OPTIONS)
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
+
+// Segurança
+app.use(helmet({ crossOriginResourcePolicy: false }));
 
 // Rate limiting
 const limiter = rateLimit({

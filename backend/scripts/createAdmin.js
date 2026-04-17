@@ -1,4 +1,4 @@
-require('dotenv').config({ path: '../.env' });
+require('dotenv').config({ path: require('path').resolve(__dirname, '../.env.local') });
 const bcrypt = require('bcryptjs');
 const { initializeFirebase, getFirestore } = require('../src/config/firebase');
 

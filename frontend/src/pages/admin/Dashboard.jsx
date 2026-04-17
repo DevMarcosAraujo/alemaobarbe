@@ -1,11 +1,19 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Calendar, Users, DollarSign, TrendingUp, Clock, CheckCircle, AlertCircle, XCircle } from 'lucide-react';
+import { Calendar, DollarSign, TrendingUp, Clock } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import api from '../../utils/api';
 import { formatCurrency, getStatusLabel, getStatusClass, formatDateShort } from '../../utils/formatters';
-import { format } from 'date-fns';
+import { format, startOfDay, startOfWeek, startOfMonth, startOfYear, isAfter, isEqual } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
+
+const PERIODS = [
+  { key: 'day',   label: 'Hoje' },
+  { key: 'week',  label: 'Semana' },
+  { key: 'month', label: 'Mês' },
+  { key: 'year',  label: 'Ano' },
+];
 
 const CustomTooltip = ({ active, payload, label }) => {
   if (!active || !payload?.length) return null;
@@ -22,22 +30,18 @@ const CustomTooltip = ({ active, payload, label }) => {
 };
 
 export default function AdminDashboard() {
-  const [stats, setStats] = useState(null);
   const [appointments, setAppointments] = useState([]);
   const [chart, setChart] = useState([]);
   const [loading, setLoading] = useState(true);
-  const month = format(new Date(), 'yyyy-MM');
+  const [period, setPeriod] = useState('month');
 
   useEffect(() => {
     const load = async () => {
       try {
-        const [statsRes, apptRes, chartRes] = await Promise.allSettled([
-          api.get(`/finance/summary?month=${month}`),
-          api.get(`/appointments?month=${month}`),
+        const [apptRes, chartRes] = await Promise.allSettled([
+          api.get('/appointments'),
           api.get('/finance/monthly-chart'),
         ]);
-
-        if (statsRes.status === 'fulfilled') setStats(statsRes.value.data);
         if (apptRes.status === 'fulfilled') setAppointments(apptRes.value.data.appointments || []);
         if (chartRes.status === 'fulfilled') setChart(chartRes.value.data.chart || []);
       } catch {}
@@ -46,27 +50,48 @@ export default function AdminDashboard() {
     load();
   }, []);
 
-  const todayStr = format(new Date(), 'yyyy-MM-dd');
+  const now = new Date();
+  const todayStr = format(now, 'yyyy-MM-dd');
+
+  // Limite inferior do período selecionado
+  const periodStart = useMemo(() => {
+    if (period === 'day')   return startOfDay(now);
+    if (period === 'week')  return startOfWeek(now, { weekStartsOn: 1 });
+    if (period === 'month') return startOfMonth(now);
+    return startOfYear(now);
+  }, [period]);
+
+  // Filtra agendamentos pelo período
+  const periodAppts = useMemo(() =>
+    appointments.filter((a) => {
+      const d = new Date(`${a.date}T00:00:00`);
+      return isAfter(d, periodStart) || isEqual(d, periodStart);
+    }),
+  [appointments, periodStart]);
+
+  const completed  = periodAppts.filter((a) => a.status === 'completed');
+  const pending    = periodAppts.filter((a) => a.status === 'pending' || a.status === 'confirmed');
   const todayAppts = appointments.filter((a) => a.date === todayStr && a.status !== 'cancelled');
-  const pendingAppts = appointments.filter((a) => a.status === 'pending');
-  const completedAppts = appointments.filter((a) => a.status === 'completed');
+
+  const faturamento = completed.reduce((s, a) => s + (a.servicePrice || 0), 0);
+  const aReceber    = pending.reduce((s, a) => s + (a.servicePrice || 0), 0);
 
   const statCards = [
     {
-      label: 'Faturamento (mês)',
-      value: formatCurrency(stats?.totalRevenue || 0),
+      label: 'Faturamento',
+      value: formatCurrency(faturamento),
       icon: DollarSign,
       color: 'text-green-400',
       bg: 'bg-green-500/10',
       border: 'border-green-500/20',
     },
     {
-      label: 'Lucro (mês)',
-      value: formatCurrency(stats?.profit || 0),
+      label: 'A Receber',
+      value: formatCurrency(aReceber),
       icon: TrendingUp,
-      color: 'text-viking-gold',
-      bg: 'bg-viking-gold/10',
-      border: 'border-viking-gold/20',
+      color: 'text-yellow-400',
+      bg: 'bg-yellow-500/10',
+      border: 'border-yellow-500/20',
     },
     {
       label: 'Agendamentos Hoje',
@@ -78,24 +103,39 @@ export default function AdminDashboard() {
     },
     {
       label: 'Pendentes',
-      value: pendingAppts.length,
+      value: pending.length,
       icon: Clock,
-      color: 'text-yellow-400',
-      bg: 'bg-yellow-500/10',
-      border: 'border-yellow-500/20',
+      color: 'text-orange-400',
+      bg: 'bg-orange-500/10',
+      border: 'border-orange-500/20',
     },
   ];
 
   return (
     <div className="max-w-6xl mx-auto">
-      {/* Header */}
-      <div className="mb-8">
-        <h1 className="font-viking text-2xl md:text-3xl font-bold text-viking-text-primary">
-          Dashboard
-        </h1>
-        <p className="text-viking-text-muted mt-1">
-          {format(new Date(), "EEEE, dd 'de' MMMM")} — Visão geral do mês
-        </p>
+      {/* Header + filtros */}
+      <div className="flex flex-wrap items-end justify-between gap-4 mb-8">
+        <div>
+          <h1 className="font-viking text-2xl md:text-3xl font-bold text-viking-text-primary">Dashboard</h1>
+          <p className="text-viking-text-muted mt-1 capitalize">
+            {format(now, "EEEE, dd 'de' MMMM", { locale: ptBR })} — Visão geral
+          </p>
+        </div>
+        <div className="flex gap-1 bg-viking-gray rounded-xl p-1">
+          {PERIODS.map(({ key, label }) => (
+            <button
+              key={key}
+              onClick={() => setPeriod(key)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                period === key
+                  ? 'bg-gold-gradient text-viking-dark'
+                  : 'text-viking-text-muted hover:text-viking-text-primary'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Stat Cards */}
@@ -164,7 +204,7 @@ export default function AdminDashboard() {
           </div>
         </motion.div>
 
-        {/* Today's appointments */}
+        {/* Today */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -175,7 +215,6 @@ export default function AdminDashboard() {
             <h2 className="font-viking font-semibold text-sm text-viking-text-primary">Hoje</h2>
             <Link to="/admin/agendamentos" className="text-xs text-viking-gold hover:underline">Ver todos</Link>
           </div>
-
           {todayAppts.length === 0 ? (
             <div className="text-center py-8">
               <Calendar size={32} className="text-viking-text-muted mx-auto mb-2" />
@@ -188,7 +227,7 @@ export default function AdminDashboard() {
                   <div className="w-8 h-8 bg-viking-gray-mid rounded-lg flex items-center justify-center shrink-0">
                     <span className="text-xs font-bold text-viking-gold">{appt.time?.slice(0, 5)}</span>
                   </div>
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1">
                     <p className="text-xs font-medium text-viking-text-primary truncate">{appt.clientName}</p>
                     <p className="text-xs text-viking-text-muted truncate">{appt.serviceName}</p>
                   </div>
@@ -205,7 +244,7 @@ export default function AdminDashboard() {
         </motion.div>
       </div>
 
-      {/* Recent Appointments Table */}
+      {/* Appointments Table */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -213,17 +252,17 @@ export default function AdminDashboard() {
         className="card mt-6 overflow-hidden"
       >
         <div className="p-5 border-b border-viking-gray-mid flex items-center justify-between">
-          <h2 className="font-viking font-semibold text-viking-text-primary">Agendamentos do Mês</h2>
+          <h2 className="font-viking font-semibold text-viking-text-primary">
+            Agendamentos — {PERIODS.find((p) => p.key === period)?.label}
+          </h2>
           <Link to="/admin/agendamentos" className="text-xs text-viking-gold hover:underline">Ver todos</Link>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-viking-gray-mid">
-                {['Cliente', 'Serviço', 'Data', 'Horário', 'Status'].map((h) => (
-                  <th key={h} className="text-left px-5 py-3 text-xs font-semibold text-viking-text-muted uppercase tracking-wider">
-                    {h}
-                  </th>
+                {['Cliente', 'Serviço', 'Data', 'Horário', 'Valor', 'Status'].map((h) => (
+                  <th key={h} className="text-left px-5 py-3 text-xs font-semibold text-viking-text-muted uppercase tracking-wider">{h}</th>
                 ))}
               </tr>
             </thead>
@@ -231,30 +270,37 @@ export default function AdminDashboard() {
               {loading ? (
                 Array.from({ length: 4 }).map((_, i) => (
                   <tr key={i} className="border-b border-viking-gray-mid">
-                    {Array.from({ length: 5 }).map((_, j) => (
+                    {Array.from({ length: 6 }).map((_, j) => (
                       <td key={j} className="px-5 py-3">
                         <div className="h-3 bg-viking-gray-mid rounded animate-pulse" />
                       </td>
                     ))}
                   </tr>
                 ))
-              ) : appointments.slice(0, 8).map((appt) => (
-                <tr key={appt.id} className="border-b border-viking-gray-mid hover:bg-viking-gray-mid/30 transition-colors">
-                  <td className="px-5 py-3 text-viking-text-primary font-medium">{appt.clientName}</td>
-                  <td className="px-5 py-3 text-viking-text-secondary">{appt.serviceName}</td>
-                  <td className="px-5 py-3 text-viking-text-muted">{formatDateShort(appt.date)}</td>
-                  <td className="px-5 py-3 text-viking-text-muted">{appt.time}</td>
-                  <td className="px-5 py-3">
-                    <span className={getStatusClass(appt.status)}>{getStatusLabel(appt.status)}</span>
-                  </td>
-                </tr>
-              ))}
-              {!loading && appointments.length === 0 && (
+              ) : periodAppts.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-5 py-8 text-center text-viking-text-muted text-sm">
-                    Nenhum agendamento este mês
+                  <td colSpan={6} className="px-5 py-8 text-center text-viking-text-muted text-sm">
+                    Nenhum agendamento no período
                   </td>
                 </tr>
+              ) : (
+                periodAppts.slice(0, 10).map((appt) => {
+                  const isPending = appt.status === 'pending' || appt.status === 'confirmed';
+                  return (
+                    <tr key={appt.id} className="border-b border-viking-gray-mid hover:bg-viking-gray-mid/30 transition-colors">
+                      <td className="px-5 py-3 text-viking-text-primary font-medium">{appt.clientName}</td>
+                      <td className="px-5 py-3 text-viking-text-secondary">{appt.serviceName}</td>
+                      <td className="px-5 py-3 text-viking-text-muted">{formatDateShort(appt.date)}</td>
+                      <td className="px-5 py-3 text-viking-text-muted">{appt.time}</td>
+                      <td className={`px-5 py-3 font-semibold ${isPending ? 'text-yellow-400' : 'text-green-400'}`}>
+                        {formatCurrency(appt.servicePrice || 0)}
+                      </td>
+                      <td className="px-5 py-3">
+                        <span className={getStatusClass(appt.status)}>{getStatusLabel(appt.status)}</span>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>

@@ -1,7 +1,11 @@
-const functions = require('firebase-functions');
+const { onRequest } = require('firebase-functions/v2/https');
 const app = require('../src/app');
 
-// Exporta o Express como Firebase Function chamada "server"
-// URL: https://us-central1-cabelereiro-alemao.cloudfunctions.net/server
-// Frontend usa: VITE_API_URL=https://us-central1-cabelereiro-alemao.cloudfunctions.net/server/api
-exports.server = functions.https.onRequest(app);
+exports.server = onRequest(
+  {
+    cors: ['https://alemaobarbe.netlify.app', 'http://localhost:5173'],
+    invoker: 'public',
+    region: 'us-central1',
+  },
+  app
+);

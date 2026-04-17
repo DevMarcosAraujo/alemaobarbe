@@ -117,7 +117,7 @@ export default function Footer() {
                 <MapPin size={14} className="text-viking-gold mt-0.5 shrink-0" />
                 <span className="text-viking-text-muted text-sm">
                   Rua dos Vikings, 123<br />
-                  Centro, Cidade - UF
+                  Centro, Três Lagoas - MS
                 </span>
               </li>
             </ul>
