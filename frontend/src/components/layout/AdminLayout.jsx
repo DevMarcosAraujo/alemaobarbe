@@ -59,7 +59,7 @@ export default function AdminLayout() {
               </div>
               <div>
                 <span className="font-viking font-bold tracking-wider text-gradient-gold text-sm block">ALEMÃO</span>
-                <span className="text-xs text-viking-text-muted">Admin Panel</span>
+                <span className="text-xs text-viking-text-muted">Painel</span>
               </div>
             </div>
             <button onClick={() => setSidebarOpen(false)} className="lg:hidden text-viking-text-muted">

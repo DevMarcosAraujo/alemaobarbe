@@ -1,5 +1,6 @@
-require('dotenv').config();
-require('dotenv').config({ path: require('path').resolve(__dirname, '../.env.local'), override: false });
+// Carrega .env.local primeiro (desenvolvimento local), depois .env como fallback
+require('dotenv').config({ path: require('path').resolve(__dirname, '../.env.local') });
+require('dotenv').config({ override: false });
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');

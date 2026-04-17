@@ -50,7 +50,7 @@ export default function ClientLayout() {
                   <div className="w-7 h-7 bg-gold-gradient rounded-lg flex items-center justify-center">
                     <span className="text-viking-dark font-viking font-black text-xs">V</span>
                   </div>
-                  <span className="font-viking font-bold tracking-wider text-gradient-gold">VIKINGS</span>
+                  <span className="font-viking font-bold tracking-wider text-gradient-gold">ALEMÃO</span>
                 </Link>
                 <button
                   onClick={() => setSidebarOpen(false)}

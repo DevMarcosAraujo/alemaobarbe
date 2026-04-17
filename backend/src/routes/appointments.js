@@ -251,10 +251,39 @@ router.put('/:id/status', verifyAdmin, async (req, res) => {
       return res.status(404).json({ error: 'Agendamento não encontrado' });
     }
 
+    const appt = doc.data();
+
     await doc.ref.update({
       status,
       updatedAt: new Date().toISOString(),
     });
+
+    // Ao concluir: cria registro de receita no financeiro (se ainda não existir)
+    if (status === 'completed' && appt.status !== 'completed') {
+      try {
+        // Verifica se já existe um registro para este agendamento
+        const existingSnap = await db
+          .collection('finance_records')
+          .where('appointmentId', '==', req.params.id)
+          .get();
+
+        if (existingSnap.empty) {
+          await db.collection('finance_records').doc().set({
+            type: 'revenue',
+            amount: appt.servicePrice || 0,
+            description: `${appt.serviceName} — ${appt.clientName}`,
+            date: appt.date,
+            category: 'serviço',
+            appointmentId: req.params.id,
+            createdBy: req.user.uid,
+            createdAt: new Date().toISOString(),
+          });
+        }
+      } catch (finErr) {
+        console.error('Finance record auto-create error:', finErr);
+        // Não falha a requisição principal
+      }
+    }
 
     return res.json({ message: 'Status atualizado' });
   } catch (error) {
@@ -381,6 +410,60 @@ router.post('/manual', verifyAdmin, async (req, res) => {
   } catch (error) {
     console.error('Manual appointment error:', error);
     return res.status(500).json({ error: 'Erro ao criar agendamento manual' });
+  }
+});
+
+// PUT /api/appointments/:id — admin: editar/reagendar agendamento
+router.put('/:id', verifyAdmin, async (req, res) => {
+  const { date, time, serviceId, barberId, notes, status } = req.body;
+  if (!date || !time) {
+    return res.status(400).json({ error: 'Data e horário obrigatórios' });
+  }
+
+  try {
+    const db = getFirestore();
+    const doc = await db.collection('appointments').doc(req.params.id).get();
+    if (!doc.exists) return res.status(404).json({ error: 'Agendamento não encontrado' });
+
+    const updates = { date, time, notes: notes || '', updatedAt: new Date().toISOString() };
+
+    if (serviceId) {
+      const svcDoc = await db.collection('services').doc(serviceId).get();
+      if (svcDoc.exists) {
+        updates.serviceId = serviceId;
+        updates.serviceName = svcDoc.data().name;
+        updates.servicePrice = svcDoc.data().price;
+      }
+    }
+
+    if (barberId) {
+      const barberDoc = await db.collection('team').doc(barberId).get();
+      updates.barberId = barberId;
+      updates.barberName = barberDoc.exists ? barberDoc.data().name || '' : '';
+    } else if (barberId === '') {
+      updates.barberId = null;
+      updates.barberName = '';
+    }
+
+    if (status) updates.status = status;
+
+    await doc.ref.update(updates);
+    return res.json({ message: 'Agendamento atualizado' });
+  } catch (error) {
+    console.error('Update appointment error:', error);
+    return res.status(500).json({ error: 'Erro ao atualizar agendamento' });
+  }
+});
+
+// DELETE /api/appointments/:id — admin: excluir agendamento
+router.delete('/:id', verifyAdmin, async (req, res) => {
+  try {
+    const db = getFirestore();
+    await db.collection('appointments').doc(req.params.id).delete();
+    return res.json({ message: 'Agendamento excluído' });
+  } catch (error) {
+    console.error('Delete appointment error:', error);
+    return res.status(500).json({ error: 'Erro ao excluir agendamento' });
   }
 });
 

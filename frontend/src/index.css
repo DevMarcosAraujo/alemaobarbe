@@ -41,6 +41,26 @@
     background: #E8C56A;
   }
 
+  /* Remove cursor de texto em elementos não editáveis */
+  body, h1, h2, h3, h4, h5, h6, p, span, div,
+  button, a, li, td, th, nav, label, section, header, footer {
+    user-select: none;
+    -webkit-user-select: none;
+    cursor: default;
+  }
+
+  /* Mantém seleção e cursor correto em inputs */
+  input, textarea, select, [contenteditable] {
+    user-select: text;
+    -webkit-user-select: text;
+    cursor: text;
+  }
+
+  /* Cursor pointer em elementos clicáveis */
+  button, a, [role="button"], .cursor-pointer {
+    cursor: pointer !important;
+  }
+
   /* Seleção de texto */
   ::selection {
     background: rgba(201, 168, 76, 0.3);

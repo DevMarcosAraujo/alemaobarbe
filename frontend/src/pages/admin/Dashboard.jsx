@@ -69,16 +69,24 @@ export default function AdminDashboard() {
     }),
   [appointments, periodStart]);
 
+  const ACTIVE = ['pending', 'confirmed'];
   const completed  = periodAppts.filter((a) => a.status === 'completed');
-  const pending    = periodAppts.filter((a) => a.status === 'pending' || a.status === 'confirmed');
-  const todayAppts = appointments.filter((a) => a.date === todayStr && a.status !== 'cancelled');
+  const pending    = periodAppts.filter((a) => ACTIVE.includes(a.status));
+  const todayAppts = appointments
+    .filter((a) => a.date === todayStr && ACTIVE.includes(a.status))
+    .sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+
+  // Tabela: só ativos, ordenados por data/hora crescente
+  const tableAppts = periodAppts
+    .filter((a) => ACTIVE.includes(a.status))
+    .sort((a, b) => `${a.date}T${a.time || '00:00'}`.localeCompare(`${b.date}T${b.time || '00:00'}`));
 
   const faturamento = completed.reduce((s, a) => s + (a.servicePrice || 0), 0);
   const aReceber    = pending.reduce((s, a) => s + (a.servicePrice || 0), 0);
 
   const statCards = [
     {
-      label: 'Faturamento',
+      label: 'Entrada Total',
       value: formatCurrency(faturamento),
       icon: DollarSign,
       color: 'text-green-400',
@@ -86,7 +94,7 @@ export default function AdminDashboard() {
       border: 'border-green-500/20',
     },
     {
-      label: 'A Receber',
+      label: 'Pagamentos Pendentes',
       value: formatCurrency(aReceber),
       icon: TrendingUp,
       color: 'text-yellow-400',
@@ -253,7 +261,7 @@ export default function AdminDashboard() {
       >
         <div className="p-5 border-b border-viking-gray-mid flex items-center justify-between">
           <h2 className="font-viking font-semibold text-viking-text-primary">
-            Agendamentos — {PERIODS.find((p) => p.key === period)?.label}
+            Próximos Agendamentos — {PERIODS.find((p) => p.key === period)?.label}
           </h2>
           <Link to="/admin/agendamentos" className="text-xs text-viking-gold hover:underline">Ver todos</Link>
         </div>
@@ -277,30 +285,27 @@ export default function AdminDashboard() {
                     ))}
                   </tr>
                 ))
-              ) : periodAppts.length === 0 ? (
+              ) : tableAppts.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="px-5 py-8 text-center text-viking-text-muted text-sm">
-                    Nenhum agendamento no período
+                    Nenhum agendamento pendente no período
                   </td>
                 </tr>
               ) : (
-                periodAppts.slice(0, 10).map((appt) => {
-                  const isPending = appt.status === 'pending' || appt.status === 'confirmed';
-                  return (
-                    <tr key={appt.id} className="border-b border-viking-gray-mid hover:bg-viking-gray-mid/30 transition-colors">
-                      <td className="px-5 py-3 text-viking-text-primary font-medium">{appt.clientName}</td>
-                      <td className="px-5 py-3 text-viking-text-secondary">{appt.serviceName}</td>
-                      <td className="px-5 py-3 text-viking-text-muted">{formatDateShort(appt.date)}</td>
-                      <td className="px-5 py-3 text-viking-text-muted">{appt.time}</td>
-                      <td className={`px-5 py-3 font-semibold ${isPending ? 'text-yellow-400' : 'text-green-400'}`}>
-                        {formatCurrency(appt.servicePrice || 0)}
-                      </td>
-                      <td className="px-5 py-3">
-                        <span className={getStatusClass(appt.status)}>{getStatusLabel(appt.status)}</span>
-                      </td>
-                    </tr>
-                  );
-                })
+                tableAppts.slice(0, 10).map((appt) => (
+                  <tr key={appt.id} className="border-b border-viking-gray-mid hover:bg-viking-gray-mid/30 transition-colors">
+                    <td className="px-5 py-3 text-viking-text-primary font-medium">{appt.clientName}</td>
+                    <td className="px-5 py-3 text-viking-text-secondary">{appt.serviceName}</td>
+                    <td className="px-5 py-3 text-viking-text-muted">{formatDateShort(appt.date)}</td>
+                    <td className="px-5 py-3 text-viking-text-muted">{appt.time}</td>
+                    <td className="px-5 py-3 font-semibold text-yellow-400">
+                      {formatCurrency(appt.servicePrice || 0)}
+                    </td>
+                    <td className="px-5 py-3">
+                      <span className={getStatusClass(appt.status)}>{getStatusLabel(appt.status)}</span>
+                    </td>
+                  </tr>
+                ))
               )}
             </tbody>
           </table>

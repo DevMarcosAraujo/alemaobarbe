@@ -5,44 +5,46 @@ const { verifyAdmin } = require('../middleware/auth');
 
 const router = express.Router();
 
+// Helpers
+const monthRange = (month) => {
+  const [year, m] = month.split('-');
+  return { start: `${year}-${m}-01`, end: `${year}-${m}-31` };
+};
+
+// Busca todos os registros do mês (sem filtro de tipo — evita índice composto)
+const fetchMonthRecords = async (db, month) => {
+  const { start, end } = monthRange(month);
+  const snap = await db
+    .collection('finance_records')
+    .where('date', '>=', start)
+    .where('date', '<=', end)
+    .get();
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+};
+
 // GET /api/finance/summary
 router.get('/summary', verifyAdmin, async (req, res) => {
-  const { month } = req.query; // formato: YYYY-MM
+  const { month } = req.query;
   if (!month) return res.status(400).json({ error: 'Mês obrigatório' });
-
-  const [year, m] = month.split('-');
-  const start = `${year}-${m}-01`;
-  const end = `${year}-${m}-31`;
 
   try {
     const db = getFirestore();
+    const records = await fetchMonthRecords(db, month);
 
-    // Receitas
-    const revenueSnap = await db
-      .collection('finance_records')
-      .where('type', '==', 'revenue')
-      .where('date', '>=', start)
-      .where('date', '<=', end)
-      .get();
-
-    // Despesas
-    const expenseSnap = await db
-      .collection('finance_records')
-      .where('type', '==', 'expense')
-      .where('date', '>=', start)
-      .where('date', '<=', end)
-      .get();
-
-    const totalRevenue = revenueSnap.docs.reduce((sum, d) => sum + (d.data().amount || 0), 0);
-    const totalExpenses = expenseSnap.docs.reduce((sum, d) => sum + (d.data().amount || 0), 0);
+    const totalRevenue = records
+      .filter((r) => r.type === 'revenue')
+      .reduce((s, r) => s + (r.amount || 0), 0);
+    const totalExpenses = records
+      .filter((r) => r.type === 'expense')
+      .reduce((s, r) => s + (r.amount || 0), 0);
 
     return res.json({
       month,
       totalRevenue,
       totalExpenses,
       profit: totalRevenue - totalExpenses,
-      revenueCount: revenueSnap.size,
-      expenseCount: expenseSnap.size,
+      revenueCount: records.filter((r) => r.type === 'revenue').length,
+      expenseCount: records.filter((r) => r.type === 'expense').length,
     });
   } catch (error) {
     console.error('Finance summary error:', error);
@@ -56,33 +58,23 @@ router.get('/records', verifyAdmin, async (req, res) => {
 
   try {
     const db = getFirestore();
-    let ref = db.collection('finance_records');
-
-    if (type) ref = ref.where('type', '==', type);
+    let records;
 
     if (month) {
-      const [year, m] = month.split('-');
-      const start = `${year}-${m}-01`;
-      const end = `${year}-${m}-31`;
-      ref = ref.where('date', '>=', start).where('date', '<=', end);
+      records = await fetchMonthRecords(db, month);
+    } else {
+      const snap = await db.collection('finance_records').get();
+      records = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
     }
 
-    const snapshot = await ref.orderBy('date', 'desc').get();
-    const records = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+    // Filtros em memória (evita índices compostos)
+    if (type) records = records.filter((r) => r.type === type);
+    records.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
 
     return res.json({ records });
   } catch (error) {
-    // Fallback sem ordenação
-    try {
-      const db = getFirestore();
-      let ref = db.collection('finance_records');
-      if (type) ref = ref.where('type', '==', type);
-      const snapshot = await ref.get();
-      const records = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-      return res.json({ records });
-    } catch {
-      return res.status(500).json({ error: 'Erro ao buscar registros' });
-    }
+    console.error('Finance records error:', error);
+    return res.status(500).json({ error: 'Erro ao buscar registros' });
   }
 });
 
@@ -90,8 +82,9 @@ router.get('/records', verifyAdmin, async (req, res) => {
 router.get('/monthly-chart', verifyAdmin, async (req, res) => {
   try {
     const db = getFirestore();
-    const months = [];
+    const monthNames = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
+    const months = [];
     for (let i = 5; i >= 0; i--) {
       const d = new Date();
       d.setMonth(d.getMonth() - i);
@@ -101,30 +94,10 @@ router.get('/monthly-chart', verifyAdmin, async (req, res) => {
     }
 
     const chartData = await Promise.all(
-      months.map(async ({ label, year, month }) => {
-        const start = `${year}-${month}-01`;
-        const end = `${year}-${month}-31`;
-
-        const [revSnap, expSnap] = await Promise.all([
-          db
-            .collection('finance_records')
-            .where('type', '==', 'revenue')
-            .where('date', '>=', start)
-            .where('date', '<=', end)
-            .get(),
-          db
-            .collection('finance_records')
-            .where('type', '==', 'expense')
-            .where('date', '>=', start)
-            .where('date', '<=', end)
-            .get(),
-        ]);
-
-        const revenue = revSnap.docs.reduce((s, d) => s + (d.data().amount || 0), 0);
-        const expenses = expSnap.docs.reduce((s, d) => s + (d.data().amount || 0), 0);
-
-        const monthNames = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
-
+      months.map(async ({ label, month }) => {
+        const records = await fetchMonthRecords(db, label);
+        const revenue  = records.filter((r) => r.type === 'revenue').reduce((s, r) => s + (r.amount || 0), 0);
+        const expenses = records.filter((r) => r.type === 'expense').reduce((s, r) => s + (r.amount || 0), 0);
         return {
           month: label,
           label: monthNames[parseInt(month) - 1],
@@ -181,6 +154,86 @@ router.post(
     }
   }
 );
+
+// POST /api/finance/sync-appointments — importa agendamentos concluídos sem registro
+router.post('/sync-appointments', verifyAdmin, async (req, res) => {
+  try {
+    const db = getFirestore();
+
+    // Busca todos os agendamentos concluídos
+    const apptSnap = await db
+      .collection('appointments')
+      .where('status', '==', 'completed')
+      .get();
+
+    if (apptSnap.empty) {
+      return res.json({ message: 'Nenhum agendamento concluído encontrado', imported: 0 });
+    }
+
+    // Busca IDs de agendamentos que já têm registro
+    const finSnap = await db
+      .collection('finance_records')
+      .where('appointmentId', '!=', null)
+      .get();
+    const existingIds = new Set(finSnap.docs.map((d) => d.data().appointmentId).filter(Boolean));
+
+    // Cria registros para os que ainda não têm
+    const batch = db.batch();
+    let count = 0;
+
+    apptSnap.docs.forEach((doc) => {
+      if (existingIds.has(doc.id)) return;
+      const appt = doc.data();
+      if (!appt.servicePrice && !appt.serviceName) return; // skip inválidos
+
+      const ref = db.collection('finance_records').doc();
+      batch.set(ref, {
+        type: 'revenue',
+        amount: appt.servicePrice || 0,
+        description: `${appt.serviceName || 'Serviço'} — ${appt.clientName || 'Cliente'}`,
+        date: appt.date,
+        category: 'serviço',
+        appointmentId: doc.id,
+        createdBy: req.user.uid,
+        createdAt: new Date().toISOString(),
+      });
+      count++;
+    });
+
+    if (count > 0) await batch.commit();
+
+    return res.json({ message: `${count} registro(s) importado(s)`, imported: count });
+  } catch (error) {
+    console.error('Sync appointments error:', error);
+    return res.status(500).json({ error: 'Erro ao sincronizar agendamentos' });
+  }
+});
+
+// PUT /api/finance/records/:id
+router.put('/records/:id', verifyAdmin, async (req, res) => {
+  const { type, amount, description, date, category } = req.body;
+  if (!type || !amount || !description || !date) {
+    return res.status(400).json({ error: 'Campos obrigatórios faltando' });
+  }
+  try {
+    const db = getFirestore();
+    const doc = await db.collection('finance_records').doc(req.params.id).get();
+    if (!doc.exists) return res.status(404).json({ error: 'Registro não encontrado' });
+
+    await doc.ref.update({
+      type,
+      amount: parseFloat(amount),
+      description,
+      date,
+      category: category || (type === 'revenue' ? 'serviço' : 'custo'),
+      updatedAt: new Date().toISOString(),
+    });
+    return res.json({ message: 'Registro atualizado' });
+  } catch (error) {
+    console.error('Update finance record error:', error);
+    return res.status(500).json({ error: 'Erro ao atualizar registro' });
+  }
+});
 
 // DELETE /api/finance/records/:id
 router.delete('/records/:id', verifyAdmin, async (req, res) => {

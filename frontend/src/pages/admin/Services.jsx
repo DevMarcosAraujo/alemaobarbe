@@ -1,9 +1,11 @@
 import { useEffect, useState, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { Plus, Pencil, Trash2, Clock, ToggleLeft, ToggleRight, ImagePlus, X } from 'lucide-react';
+import { Plus, Pencil, Trash2, Clock, ToggleLeft, ToggleRight, ImagePlus, X, Tag, Settings2 } from 'lucide-react';
 import api from '../../utils/api';
 import { formatCurrency } from '../../utils/formatters';
 import toast from 'react-hot-toast';
+
+const DEFAULT_CATEGORIES = ['corte', 'barba', 'tratamento', 'combo', 'outro'];
 
 const EMPTY_FORM = { name: '', price: '', duration: 45, description: '', category: 'corte', image: '' };
 
@@ -96,7 +98,53 @@ export default function AdminServices() {
     } catch { toast.error('Erro ao excluir'); }
   };
 
-  const CATEGORIES = ['corte', 'barba', 'tratamento', 'combo', 'outro'];
+  // Categorias — começa com padrões + salvas no localStorage
+  const [categories, setCategories] = useState(() => {
+    try {
+      const saved = localStorage.getItem('svc_categories');
+      return saved ? JSON.parse(saved) : DEFAULT_CATEGORIES;
+    } catch { return DEFAULT_CATEGORIES; }
+  });
+  const [newCatInput, setNewCatInput] = useState('');
+  const [showNewCat, setShowNewCat] = useState(false);
+
+  const saveCategories = (list) => {
+    setCategories(list);
+    localStorage.setItem('svc_categories', JSON.stringify(list));
+  };
+
+  const addCategory = () => {
+    const val = newCatInput.trim().toLowerCase();
+    if (!val) return;
+    if (categories.includes(val)) { toast.error('Categoria já existe'); return; }
+    const updated = [...categories, val];
+    saveCategories(updated);
+    setForm((p) => ({ ...p, category: val }));
+    setNewCatInput('');
+    setShowNewCat(false);
+    toast.success(`Categoria "${val}" criada`);
+  };
+
+  const [showCatManager, setShowCatManager] = useState(false);
+  const [newCatManagerInput, setNewCatManagerInput] = useState('');
+
+  const deleteCategory = (cat) => {
+    if (categories.length <= 1) { toast.error('Deve haver ao menos uma categoria'); return; }
+    if (!window.confirm(`Excluir a categoria "${cat}"?`)) return;
+    const updated = categories.filter((c) => c !== cat);
+    saveCategories(updated);
+    if (form.category === cat) setForm((p) => ({ ...p, category: updated[0] }));
+    toast.success('Categoria excluída');
+  };
+
+  const addCategoryFromManager = () => {
+    const val = newCatManagerInput.trim().toLowerCase();
+    if (!val) return;
+    if (categories.includes(val)) { toast.error('Categoria já existe'); return; }
+    saveCategories([...categories, val]);
+    setNewCatManagerInput('');
+    toast.success(`Categoria "${val}" criada`);
+  };
 
   return (
     <div className="max-w-4xl mx-auto">
@@ -105,10 +153,60 @@ export default function AdminServices() {
           <h1 className="font-viking text-2xl font-bold text-viking-text-primary">Serviços</h1>
           <p className="text-viking-text-muted text-sm">{services.length} serviço(s)</p>
         </div>
-        <button onClick={openCreate} className="btn-gold text-sm flex items-center gap-1.5">
-          <Plus size={16} /> Novo Serviço
-        </button>
+        <div className="flex gap-2">
+          <button onClick={() => setShowCatManager((v) => !v)}
+            className={`flex items-center gap-1.5 text-sm px-3 py-2 rounded-xl border transition-all ${
+              showCatManager ? 'bg-viking-gold/10 border-viking-gold/40 text-viking-gold' : 'bg-viking-gray border-viking-gray-mid text-viking-text-muted hover:text-viking-text-primary'
+            }`}>
+            <Settings2 size={15} /> Categorias
+          </button>
+          <button onClick={openCreate} className="btn-gold text-sm flex items-center gap-1.5">
+            <Plus size={16} /> Novo Serviço
+          </button>
+        </div>
       </div>
+
+      {/* Gerenciador de Categorias */}
+      {showCatManager && (
+        <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}
+          className="card p-5 mb-6 border border-viking-gold/20">
+          <div className="flex items-center gap-2 mb-4">
+            <Tag size={16} className="text-viking-gold" />
+            <h3 className="font-semibold text-viking-text-primary text-sm">Gerenciar Categorias</h3>
+          </div>
+
+          {/* Lista de categorias */}
+          <div className="flex flex-wrap gap-2 mb-4">
+            {categories.map((cat) => (
+              <div key={cat} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-sm ${
+                DEFAULT_CATEGORIES.includes(cat)
+                  ? 'bg-viking-gray-mid border-viking-gray-light text-viking-text-muted'
+                  : 'bg-viking-gold/10 border-viking-gold/30 text-viking-gold'
+              }`}>
+                <span className="capitalize">{cat}</span>
+                <button type="button" onClick={() => deleteCategory(cat)}
+                  className="hover:text-red-400 transition-colors ml-1">
+                  <X size={13} />
+                </button>
+              </div>
+            ))}
+          </div>
+
+          {/* Adicionar nova */}
+          <div className="flex gap-2">
+            <input value={newCatManagerInput}
+              onChange={(e) => setNewCatManagerInput(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && addCategoryFromManager()}
+              placeholder="Nome da nova categoria..."
+              className="input-field flex-1 py-2 text-sm" />
+            <button type="button" onClick={addCategoryFromManager}
+              className="px-4 py-2 rounded-xl bg-viking-gold/20 border border-viking-gold/40 text-viking-gold hover:bg-viking-gold/30 transition-colors text-sm font-medium">
+              Adicionar
+            </button>
+          </div>
+          <p className="text-xs text-viking-text-muted mt-2">Deve haver ao menos uma categoria cadastrada.</p>
+        </motion.div>
+      )}
 
       {loading ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -202,9 +300,36 @@ export default function AdminServices() {
               </div>
               <div>
                 <label className="input-label">Categoria</label>
-                <select value={form.category} onChange={(e) => setForm((p) => ({ ...p, category: e.target.value }))} className="input-field">
-                  {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
-                </select>
+                <div className="flex gap-2">
+                  <select value={form.category} onChange={(e) => setForm((p) => ({ ...p, category: e.target.value }))} className="input-field flex-1">
+                    {categories.map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                  <button type="button" onClick={() => setShowNewCat((v) => !v)}
+                    className="px-3 rounded-xl bg-viking-gray-mid border border-viking-gray-light hover:border-viking-gold/50 text-viking-gold transition-colors"
+                    title="Nova categoria">
+                    <Plus size={16} />
+                  </button>
+                </div>
+
+                {/* Input nova categoria inline */}
+                {showNewCat && (
+                  <div className="flex gap-2 mt-2">
+                    <input value={newCatInput} onChange={(e) => setNewCatInput(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addCategory())}
+                      placeholder="Nome da nova categoria..."
+                      className="input-field flex-1 py-2 text-sm" autoFocus />
+                    <button type="button" onClick={addCategory}
+                      className="px-3 rounded-xl bg-viking-gold/20 border border-viking-gold/40 text-viking-gold hover:bg-viking-gold/30 transition-colors text-sm font-medium">
+                      OK
+                    </button>
+                    <button type="button" onClick={() => { setShowNewCat(false); setNewCatInput(''); }}
+                      className="px-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 hover:bg-red-500/20 transition-colors">
+                      <X size={14} />
+                    </button>
+                  </div>
+                )}
               </div>
               <div>
                 <label className="input-label">Descrição</label>

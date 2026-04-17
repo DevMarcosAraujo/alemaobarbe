@@ -63,6 +63,46 @@ router.post(
   }
 );
 
+// PUT /api/users/:id - editar dados do usuário
+router.put('/:id', verifyAdmin, async (req, res) => {
+  const { name, phone, role } = req.body;
+  if (!name) return res.status(400).json({ error: 'Nome obrigatório' });
+
+  try {
+    const db = getFirestore();
+    const doc = await db.collection('users').doc(req.params.id).get();
+    if (!doc.exists) return res.status(404).json({ error: 'Usuário não encontrado' });
+
+    const updates = { name: name.trim(), phone: phone || '', updatedAt: new Date().toISOString() };
+    if (role && ['client', 'admin'].includes(role)) updates.role = role;
+
+    await doc.ref.update(updates);
+    return res.json({ message: 'Usuário atualizado' });
+  } catch (error) {
+    return res.status(500).json({ error: 'Erro ao atualizar usuário' });
+  }
+});
+
+// PUT /api/users/:id/password - redefinir senha (admin)
+router.put('/:id/password', verifyAdmin, async (req, res) => {
+  const { password } = req.body;
+  if (!password || password.length < 6) {
+    return res.status(400).json({ error: 'Senha deve ter mínimo 6 caracteres' });
+  }
+
+  try {
+    const db = getFirestore();
+    const doc = await db.collection('users').doc(req.params.id).get();
+    if (!doc.exists) return res.status(404).json({ error: 'Usuário não encontrado' });
+
+    const hashed = await bcrypt.hash(password, 12);
+    await doc.ref.update({ password: hashed, updatedAt: new Date().toISOString() });
+    return res.json({ message: 'Senha redefinida com sucesso' });
+  } catch (error) {
+    return res.status(500).json({ error: 'Erro ao redefinir senha' });
+  }
+});
+
 // PUT /api/users/:id/toggle - ativar/desativar
 router.put('/:id/toggle', verifyAdmin, async (req, res) => {
   try {
