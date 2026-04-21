@@ -31,7 +31,8 @@ export default function AdminSettings() {
   const [slots, setSlots] = useState([]);
   const [slotsLoading, setSlotsLoading] = useState(false);
   const [blockingDay, setBlockingDay] = useState(false);
-  const [togglingSlot, setTogglingSlot] = useState(null);
+  const [stagedTimes, setStagedTimes] = useState(new Set()); // horários selecionados (disponíveis)
+  const [savingSlots, setSavingSlots] = useState(false);
 
   // Salon
   const [salon, setSalon] = useState({
@@ -69,9 +70,17 @@ export default function AdminSettings() {
     if (!dateStr) return;
     setSlotsLoading(true);
     setSlots([]);
+    setStagedTimes(new Set());
     try {
       const { data } = await api.get(`/appointments/available-slots?date=${dateStr}`);
-      setSlots(data.slots || []);
+      const s = data.slots || [];
+      setSlots(s);
+      // Só pré-seleciona se o dia já foi configurado antes; dia novo começa vazio
+      if (data.dayConfigured) {
+        setStagedTimes(new Set(s.filter((sl) => sl.available).map((sl) => sl.time)));
+      } else {
+        setStagedTimes(new Set());
+      }
     } catch { setSlots([]); }
     setSlotsLoading(false);
   }, []);
@@ -122,26 +131,27 @@ export default function AdminSettings() {
     setBlockingDay(false);
   };
 
-  // ── Toggle block individual time slot ──────────────────────────────────────
-  const toggleSlot = async (time, available) => {
-    if (!selectedDate) return;
-    setTogglingSlot(time);
+  // ── Toggle horário de trabalho (apenas visual, salva em lote) ─────────────
+  const toggleSlot = (time, booked) => {
+    if (booked) return; // horário com agendamento real — não pode alterar
+    setStagedTimes((prev) => {
+      const next = new Set(prev);
+      next.has(time) ? next.delete(time) : next.add(time);
+      return next;
+    });
+  };
+
+  const saveWorkingHours = async () => {
+    if (!selectedDate || slots.length === 0) return;
+    setSavingSlots(true);
     try {
-      if (available) {
-        // block it
-        await api.post('/appointments/block-time', { date: selectedDate, time });
-        setSlots((p) => p.map((s) => s.time === time ? { ...s, available: false } : s));
-        toast.success(`${time} bloqueado`);
-      } else {
-        // unblock it (only if it was manually blocked — not a real appointment)
-        await api.delete(`/appointments/block-time/${selectedDate}/${time}`);
-        setSlots((p) => p.map((s) => s.time === time ? { ...s, available: true } : s));
-        toast.success(`${time} disponível`);
-      }
-    } catch (err) {
-      toast.error(err.response?.data?.error || 'Não é possível alterar este horário');
-    }
-    setTogglingSlot(null);
+      const allTimes = slots.map((s) => s.time);
+      const selectedTimes = [...stagedTimes];
+      await api.post('/appointments/set-working-hours', { date: selectedDate, allTimes, selectedTimes });
+      toast.success('Horários de trabalho salvos');
+      await loadSlots(selectedDate);
+    } catch { toast.error('Erro ao salvar horários'); }
+    setSavingSlots(false);
   };
 
   // ── Toggle weekday closed ──────────────────────────────────────────────────
@@ -219,7 +229,7 @@ export default function AdminSettings() {
       <div className="flex gap-1 bg-viking-gray rounded-xl p-1 mb-6 flex-wrap">
         {[
           { value: 'schedule', label: 'Horários', icon: Clock },
-          { value: 'salon',    label: 'Salão',    icon: Store },
+          { value: 'salon',    label: 'Barbearia', icon: Store },
           { value: 'password', label: 'Senha',    icon: Lock  },
         ].map(({ value, label, icon: Icon }) => (
           <button key={value} onClick={() => setTab(value)}
@@ -365,7 +375,7 @@ export default function AdminSettings() {
                   {/* Slots */}
                   <div className="flex-1 p-5 overflow-y-auto">
                     <p className="text-xs text-viking-text-muted uppercase tracking-widest font-semibold mb-3">
-                      Horários — clique para bloquear / liberar
+                      Selecione os horários de trabalho
                     </p>
 
                     {isDayBlocked ? (
@@ -387,43 +397,52 @@ export default function AdminSettings() {
                     ) : (
                       <>
                         <div className="grid grid-cols-3 gap-2">
-                          {slots.map(({ time, available }) => {
-                            const isToggling = togglingSlot === time;
+                          {slots.map(({ time, booked }) => {
+                            const isSelected = stagedTimes.has(time);
                             return (
                               <button
                                 key={time}
                                 type="button"
-                                onClick={() => toggleSlot(time, available)}
-                                disabled={isToggling}
-                                title={available ? 'Clique para bloquear' : 'Clique para liberar'}
-                                className={`h-11 rounded-xl flex items-center justify-center text-sm font-medium transition-all relative ${
-                                  isToggling
-                                    ? 'opacity-50 cursor-wait bg-viking-gray-mid'
-                                    : available
-                                      ? 'bg-viking-gray border border-viking-gray-mid text-viking-text-primary hover:border-red-500/50 hover:bg-red-500/10 hover:text-red-400 cursor-pointer'
-                                      : 'bg-red-500/15 border border-red-500/30 text-red-400 line-through hover:bg-red-500/25 cursor-pointer'
+                                onClick={() => toggleSlot(time, booked)}
+                                title={booked ? 'Horário ocupado — agendamento confirmado' : isSelected ? 'Clique para desmarcar' : 'Clique para trabalhar neste horário'}
+                                className={`h-11 rounded-xl flex items-center justify-center text-sm font-medium transition-all ${
+                                  booked
+                                    ? 'bg-blue-500/10 border border-blue-500/20 text-blue-400 cursor-not-allowed'
+                                    : isSelected
+                                      ? 'bg-viking-gold/20 border border-viking-gold/60 text-viking-gold font-bold cursor-pointer hover:bg-viking-gold/30'
+                                      : 'bg-viking-gray border border-viking-gray-mid text-viking-text-muted cursor-pointer hover:border-viking-gold/30 hover:text-viking-text-secondary'
                                 }`}
                               >
-                                {isToggling
-                                  ? <Loader2 size={14} className="animate-spin" />
-                                  : time
-                                }
+                                {time}
                               </button>
                             );
                           })}
                         </div>
 
-                        {/* Slot legend */}
-                        <div className="flex gap-4 mt-4 text-xs text-viking-text-muted">
+                        {/* Legend */}
+                        <div className="flex flex-wrap gap-3 mt-4 text-xs text-viking-text-muted">
+                          <span className="flex items-center gap-1.5">
+                            <span className="w-2.5 h-2.5 rounded bg-viking-gold/20 border border-viking-gold/60" />
+                            Selecionado (vou trabalhar)
+                          </span>
                           <span className="flex items-center gap-1.5">
                             <span className="w-2.5 h-2.5 rounded bg-viking-gray border border-viking-gray-mid" />
-                            Disponível
+                            Não selecionado (bloqueado)
                           </span>
                           <span className="flex items-center gap-1.5">
-                            <span className="w-2.5 h-2.5 rounded bg-red-500/20 border border-red-500/30" />
-                            Bloqueado / Ocupado
+                            <span className="w-2.5 h-2.5 rounded bg-blue-500/10 border border-blue-500/20" />
+                            Ocupado (agendado)
                           </span>
                         </div>
+
+                        {/* Salvar horários */}
+                        <button type="button" onClick={saveWorkingHours} disabled={savingSlots}
+                          className="mt-4 w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-viking-gold/20 border border-viking-gold/40 text-viking-gold hover:bg-viking-gold/30 transition-all font-medium text-sm disabled:opacity-60">
+                          {savingSlots
+                            ? <><Loader2 size={15} className="animate-spin" /> Salvando...</>
+                            : <><Save size={15} /> Salvar horários do dia</>
+                          }
+                        </button>
                       </>
                     )}
                   </div>
@@ -447,9 +466,9 @@ export default function AdminSettings() {
       {tab === 'salon' && (
         <motion.form onSubmit={saveSalon} initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
           <div className="card p-6 space-y-4">
-            <h3 className="font-viking font-semibold text-viking-text-primary">Informações do Salão</h3>
+            <h3 className="font-viking font-semibold text-viking-text-primary">Informações da Barbearia</h3>
             {[
-              { key: 'name',      label: 'Nome do Salão',              placeholder: 'ALEMÃO Barbearia' },
+              { key: 'name',      label: 'Nome da Barbearia',          placeholder: 'ALEMÃO Barbearia' },
               { key: 'tagline',   label: 'Slogan',                     placeholder: 'Tradição e estilo...' },
               { key: 'phone',     label: 'Telefone',                   placeholder: '(00) 00000-0000' },
               { key: 'email',     label: 'Email',                      placeholder: 'contato@alemao.com' },
@@ -468,43 +487,6 @@ export default function AdminSettings() {
               <label className="input-label">Sobre a Barbearia</label>
               <textarea value={salon.about || ''} onChange={(e) => setSalon((p) => ({ ...p, about: e.target.value }))}
                 className="input-field h-28 resize-none" placeholder="Conte a história da sua barbearia..." />
-            </div>
-          </div>
-
-          {/* Time settings */}
-          <div className="card p-6 space-y-4">
-            <h3 className="font-viking font-semibold text-viking-text-primary">Configurações de Agenda</h3>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="input-label">Abertura</label>
-                <input type="time" value={schedule.startTime}
-                  onChange={(e) => setSchedule((p) => ({ ...p, startTime: e.target.value }))} className="input-field" />
-              </div>
-              <div>
-                <label className="input-label">Fechamento</label>
-                <input type="time" value={schedule.endTime}
-                  onChange={(e) => setSchedule((p) => ({ ...p, endTime: e.target.value }))} className="input-field" />
-              </div>
-            </div>
-            <div>
-              <label className="input-label">Duração dos slots (minutos)</label>
-              <select value={schedule.slotDuration}
-                onChange={(e) => setSchedule((p) => ({ ...p, slotDuration: parseInt(e.target.value) }))}
-                className="input-field">
-                {[15, 20, 30, 45, 60].map((d) => <option key={d} value={d}>{d} min</option>)}
-              </select>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="input-label">Início do almoço</label>
-                <input type="time" value={schedule.lunchStart}
-                  onChange={(e) => setSchedule((p) => ({ ...p, lunchStart: e.target.value }))} className="input-field" />
-              </div>
-              <div>
-                <label className="input-label">Fim do almoço</label>
-                <input type="time" value={schedule.lunchEnd}
-                  onChange={(e) => setSchedule((p) => ({ ...p, lunchEnd: e.target.value }))} className="input-field" />
-              </div>
             </div>
           </div>
 

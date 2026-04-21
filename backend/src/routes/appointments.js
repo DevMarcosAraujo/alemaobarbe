@@ -1,7 +1,7 @@
 const express = require('express');
 const { body, validationResult, query } = require('express-validator');
 const { getFirestore } = require('../config/firebase');
-const { verifyToken, verifyAdmin } = require('../middleware/auth');
+const { verifyToken, verifyAdmin, optionalAuth } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -44,8 +44,9 @@ router.get('/', verifyToken, async (req, res) => {
 });
 
 // GET /api/appointments/available-slots
-router.get('/available-slots', async (req, res) => {
+router.get('/available-slots', optionalAuth, async (req, res) => {
   const { date } = req.query;
+  const isAdmin = req.user?.role === 'admin';
   if (!date) return res.status(400).json({ error: 'Data obrigatória' });
 
   try {
@@ -55,6 +56,14 @@ router.get('/available-slots', async (req, res) => {
     const blockedDoc = await db.collection('blocked_days').doc(date).get();
     if (blockedDoc.exists && blockedDoc.data().blocked) {
       return res.json({ slots: [], blocked: true, message: blockedDoc.data().reason || 'Dia indisponível' });
+    }
+
+    // Verificar se o dia foi configurado pelo admin
+    const workingDoc = await db.collection('working_days').doc(date).get();
+    const dayConfigured = workingDoc.exists && workingDoc.data().active;
+
+    if (!isAdmin && !dayConfigured) {
+      return res.json({ slots: [], blocked: true, message: 'Dia sem horários configurados' });
     }
 
     // Buscar configurações de horário
@@ -123,9 +132,32 @@ router.get('/available-slots', async (req, res) => {
     const slots = allSlots.map((time) => ({
       time,
       available: !bookedTimes.has(time) && !blockedTimes.has(time),
+      booked: bookedTimes.has(time),
     }));
 
-    return res.json({ slots, blocked: false });
+    // Para clientes: bloqueia horários passados e o próximo imediato (horário de Brasília)
+    if (!isAdmin) {
+      const nowBrazil = new Date().toLocaleString('sv-SE', {
+        timeZone: 'America/Sao_Paulo',
+        hour12: false,
+      });
+      const todayBrazil = nowBrazil.slice(0, 10);
+      const currentTimeBrazil = nowBrazil.slice(11, 16);
+      if (date === todayBrazil) {
+        const toMinutes = (t) => {
+          const [h, m] = t.split(':').map(Number);
+          return h * 60 + m;
+        };
+        const curMinutes = toMinutes(currentTimeBrazil);
+        slots.forEach((s) => {
+          if (toMinutes(s.time) <= curMinutes) s.available = false;
+        });
+        const nextSlot = slots.find((s) => !s.booked && toMinutes(s.time) > curMinutes);
+        if (nextSlot) nextSlot.available = false;
+      }
+    }
+
+    return res.json({ slots, blocked: false, dayConfigured });
   } catch (error) {
     console.error('Available slots error:', error);
     return res.status(500).json({ error: 'Erro ao buscar horários' });
@@ -331,6 +363,76 @@ router.get('/blocked-days', async (req, res) => {
     return res.json({ days });
   } catch (error) {
     return res.status(500).json({ error: 'Erro ao buscar dias bloqueados' });
+  }
+});
+
+// POST /api/appointments/set-working-hours — salvar horários de trabalho do dia
+router.post('/set-working-hours', verifyAdmin, async (req, res) => {
+  const { date, allTimes, selectedTimes } = req.body;
+  if (!date || !Array.isArray(allTimes) || !Array.isArray(selectedTimes)) {
+    return res.status(400).json({ error: 'Dados inválidos' });
+  }
+  try {
+    const db = getFirestore();
+    const selectedSet = new Set(selectedTimes);
+    const timesToBlock = allTimes.filter((t) => !selectedSet.has(t));
+
+    // Remove todos os bloqueios manuais existentes para o dia
+    const existingSnap = await db.collection('blocked_times').where('date', '==', date).get();
+    const batch = db.batch();
+    existingSnap.docs.forEach((doc) => batch.delete(doc.ref));
+
+    // Cria bloqueios para os horários não selecionados
+    timesToBlock.forEach((time) => {
+      const id = `${date}_${time.replace(':', '')}`;
+      batch.set(db.collection('blocked_times').doc(id), {
+        date, time, blockedAt: new Date().toISOString(),
+      });
+    });
+
+    // Marca o dia como configurado (working_days)
+    batch.set(db.collection('working_days').doc(date), {
+      date,
+      active: selectedTimes.length > 0,
+      updatedAt: new Date().toISOString(),
+    });
+
+    await batch.commit();
+    return res.json({ message: 'Horários de trabalho salvos', blocked: timesToBlock.length });
+  } catch (error) {
+    console.error('set-working-hours error:', error);
+    return res.status(500).json({ error: 'Erro ao salvar horários' });
+  }
+});
+
+// GET /api/appointments/available-dates?month=YYYY-MM — datas configuradas para o mês
+router.get('/available-dates', async (req, res) => {
+  const { month } = req.query;
+  if (!month) return res.status(400).json({ error: 'Mês obrigatório' });
+
+  try {
+    const db = getFirestore();
+    const [year, m] = month.split('-');
+    const start = `${year}-${m}-01`;
+    const end   = `${year}-${m}-31`;
+
+    const [workingSnap, blockedSnap] = await Promise.all([
+      db.collection('working_days').where('date', '>=', start).where('date', '<=', end).get(),
+      db.collection('blocked_days').get(),
+    ]);
+
+    const blockedSet = new Set(
+      blockedSnap.docs.filter((d) => d.data().blocked).map((d) => d.id)
+    );
+    const dates = workingSnap.docs
+      .filter((d) => d.data().active)
+      .map((d) => d.id)
+      .filter((date) => !blockedSet.has(date));
+
+    return res.json({ dates });
+  } catch (error) {
+    console.error('available-dates error:', error);
+    return res.status(500).json({ error: 'Erro ao buscar datas disponíveis' });
   }
 });
 

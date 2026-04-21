@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Calendar, Clock, Scissors, CheckCircle, ChevronLeft, ChevronRight } from 'lucide-react';
-import { format, addDays, startOfToday, isBefore, parseISO } from 'date-fns';
+import { format, addDays, startOfToday, isBefore, parseISO, addMonths } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import api from '../../utils/api';
 import { formatCurrency } from '../../utils/formatters';
@@ -15,25 +15,36 @@ export default function ClientBooking() {
   const [services, setServices] = useState([]);
   const [selected, setSelected] = useState({ service: null, date: null, time: null });
   const [slots, setSlots] = useState([]);
-  const [blockedDays, setBlockedDays] = useState([]);
+  const [availableDates, setAvailableDates] = useState(new Set());
   const [loading, setLoading] = useState(false);
   const [slotsLoading, setSlotsLoading] = useState(false);
+  const [datesLoading, setDatesLoading] = useState(true);
   const [notes, setNotes] = useState('');
   const [done, setDone] = useState(false);
   const navigate = useNavigate();
 
-  // Gerar próximos 30 dias
   const today = startOfToday();
-  const dates = Array.from({ length: 30 }, (_, i) => addDays(today, i));
 
+  // Carrega datas disponíveis dos próximos 2 meses
   useEffect(() => {
-    Promise.all([
-      api.get('/services'),
-      api.get('/appointments/blocked-days'),
-    ]).then(([svcRes, blkRes]) => {
-      setServices(svcRes.data.services || []);
-      setBlockedDays(blkRes.data.days?.map((d) => d.date) || []);
-    }).catch(() => {});
+    const loadDates = async () => {
+      setDatesLoading(true);
+      const now = new Date();
+      const m1 = format(now, 'yyyy-MM');
+      const m2 = format(addMonths(now, 1), 'yyyy-MM');
+      const [svcRes, d1Res, d2Res] = await Promise.allSettled([
+        api.get('/services'),
+        api.get(`/appointments/available-dates?month=${m1}`),
+        api.get(`/appointments/available-dates?month=${m2}`),
+      ]);
+      if (svcRes.status === 'fulfilled') setServices(svcRes.value.data.services || []);
+      const todayStr = format(today, 'yyyy-MM-dd');
+      const d1 = d1Res.status === 'fulfilled' ? d1Res.value.data.dates || [] : [];
+      const d2 = d2Res.status === 'fulfilled' ? d2Res.value.data.dates || [] : [];
+      setAvailableDates(new Set([...d1, ...d2].filter((d) => d >= todayStr)));
+      setDatesLoading(false);
+    };
+    loadDates();
   }, []);
 
   useEffect(() => {
@@ -63,10 +74,9 @@ export default function ClientBooking() {
     }
   };
 
-  const isDateBlocked = (date) => {
+  const isDateAvailable = (date) => {
     const dateStr = format(date, 'yyyy-MM-dd');
-    const dayOfWeek = date.getDay();
-    return blockedDays.includes(dateStr) || dayOfWeek === 0; // Domingo bloqueado por padrão
+    return availableDates.has(dateStr);
   };
 
   if (done) {
@@ -167,31 +177,41 @@ export default function ClientBooking() {
       {step === 1 && (
         <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} key="step1">
           <h2 className="font-semibold text-viking-text-primary mb-4">Escolha a data</h2>
-          <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
-            {dates.map((date) => {
-              const dateStr = format(date, 'yyyy-MM-dd');
-              const blocked = isDateBlocked(date);
-              const isSelected = selected.date === dateStr;
-              return (
-                <button
-                  key={dateStr}
-                  disabled={blocked}
-                  onClick={() => { setSelected((p) => ({ ...p, date: dateStr, time: null })); setStep(2); }}
-                  className={`p-3 rounded-xl text-center transition-all ${
-                    blocked ? 'opacity-30 cursor-not-allowed bg-viking-gray' :
-                    isSelected ? 'bg-gold-gradient text-viking-dark' :
-                    'card hover:border-viking-gold/30'
-                  }`}
-                >
-                  <p className="text-xs uppercase font-medium">
-                    {format(date, 'EEE', { locale: ptBR })}
-                  </p>
-                  <p className="font-bold text-lg">{format(date, 'dd')}</p>
-                  <p className="text-xs opacity-70">{format(date, 'MMM', { locale: ptBR })}</p>
-                </button>
-              );
-            })}
-          </div>
+          {datesLoading ? (
+            <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+              {Array.from({ length: 10 }).map((_, i) => (
+                <div key={i} className="h-20 rounded-xl bg-viking-gray-mid animate-pulse" />
+              ))}
+            </div>
+          ) : availableDates.size === 0 ? (
+            <div className="card p-10 text-center">
+              <Calendar size={36} className="text-viking-text-muted mx-auto mb-3" />
+              <p className="text-viking-text-muted">Nenhuma data disponível no momento.</p>
+              <p className="text-xs text-viking-text-muted mt-1">Entre em contato para agendar.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+              {[...availableDates].sort().map((dateStr) => {
+                const date = new Date(dateStr + 'T12:00:00');
+                const isSelected = selected.date === dateStr;
+                return (
+                  <button
+                    key={dateStr}
+                    onClick={() => { setSelected((p) => ({ ...p, date: dateStr, time: null })); setStep(2); }}
+                    className={`p-3 rounded-xl text-center transition-all ${
+                      isSelected ? 'bg-gold-gradient text-viking-dark' : 'card hover:border-viking-gold/30'
+                    }`}
+                  >
+                    <p className="text-xs uppercase font-medium">
+                      {format(date, 'EEE', { locale: ptBR })}
+                    </p>
+                    <p className="font-bold text-lg">{format(date, 'dd')}</p>
+                    <p className="text-xs opacity-70">{format(date, 'MMM', { locale: ptBR })}</p>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </motion.div>
       )}
 

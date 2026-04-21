@@ -188,9 +188,8 @@ export default function AdminDashboard() {
                 <XAxis dataKey="label" tick={{ fill: '#6B6560', fontSize: 11 }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fill: '#6B6560', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={(v) => `R$${v}`} />
                 <Tooltip content={<CustomTooltip />} />
-                <Bar dataKey="revenue" fill="#C9A84C" radius={[4, 4, 0, 0]} name="revenue" />
-                <Bar dataKey="expenses" fill="#8B0000" radius={[4, 4, 0, 0]} name="expenses" />
-                <Bar dataKey="profit" fill="#4CAF50" radius={[4, 4, 0, 0]} name="profit" />
+                <Bar dataKey="revenue" fill="#4CAF50" radius={[4, 4, 0, 0]} name="revenue" />
+                <Bar dataKey="profit" fill="#C9A84C" radius={[4, 4, 0, 0]} name="profit" />
               </BarChart>
             </ResponsiveContainer>
           ) : (
@@ -200,9 +199,8 @@ export default function AdminDashboard() {
           )}
           <div className="flex items-center gap-4 mt-3">
             {[
-              { color: 'bg-viking-gold', label: 'Receita' },
-              { color: 'bg-viking-red', label: 'Despesas' },
-              { color: 'bg-green-500', label: 'Lucro' },
+              { color: 'bg-green-500', label: 'Entrada realizada' },
+              { color: 'bg-viking-gold', label: 'A receber (pendente)' },
             ].map(({ color, label }) => (
               <div key={label} className="flex items-center gap-1.5 text-xs text-viking-text-muted">
                 <div className={`w-2 h-2 rounded-full ${color}`} />
